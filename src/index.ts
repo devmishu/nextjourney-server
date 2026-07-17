@@ -208,6 +208,24 @@ app.get("/api/trips", async (req: Request, res: Response) => {
   }
 });
 
+// get featured trips
+app.get("/api/trips/featured", async (req: Request, res: Response) => {
+  try {
+    const tripsData = await trips.find().limit(8).toArray();
+
+    res.status(200).send({
+      success: true,
+      message: "Featured trips fetched successfully",
+      data: tripsData,
+    });
+  } catch (error: any) {
+    res.status(500).send({
+      success: false,
+      message: "Failed to fetch featured trips",
+      error: error.message,
+    });
+  }
+});
 
 // Routes
 app.get("/", (req: Request, res: Response) => {
