@@ -129,6 +129,85 @@ app.post("/api/trips",verifyToken, async (req: Request, res: Response) => {
   }
 });
 
+// get all trips
+app.get("/api/trips", async (req: Request, res: Response) => {
+  try {
+    const { search, category, location, sortBy, page, itemsPerPage } = req.query;
+
+    let query: Record<string, any> = {};
+
+    if (search && typeof search === "string") {
+      query.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { shortDescription: { $regex: search, $options: "i" } },
+        { category: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    if (
+      category &&
+      typeof category === "string" &&
+      category !== "All Categories"
+    ) {
+      query.category = {
+        $regex: `^${category.trim()}$`,
+        $options: "i",
+      };
+    }
+
+    if (
+      location &&
+      typeof location === "string" &&
+      location !== "All Locations"
+    ) {
+      query.location = {
+        $regex: `^${location.trim()}$`,
+        $options: "i",
+      };
+    }
+
+    let sortOption: Record<string, any> = { _id: -1 };
+
+    if (sortBy === "Newest") {
+      sortOption = { date: -1 };
+    } else if (sortBy === "Oldest") {
+      sortOption = { date: 1 };
+    } else if (sortBy === "PriceLowToHigh") {
+      sortOption = { price: 1 };
+    } else if (sortBy === "PriceHighToLow") {
+      sortOption = { price: -1 };
+    }
+
+    const total = await trips.countDocuments(query);
+
+    const currentPage = parseInt(page as string) || 1;
+    const limit = parseInt(itemsPerPage as string) || 8;
+    const skip = (currentPage - 1) * limit;
+
+    const result = await trips
+      .find(query)
+      .sort(sortOption)
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    res.status(200).send({
+      success: true,
+      message: "Trips fetched successfully",
+      data: {
+        total,
+        result,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).send({
+      success: false,
+      message: "Failed to fetch trips",
+      error: error.message,
+    });
+  }
+});
+
 
 // Routes
 app.get("/", (req: Request, res: Response) => {
