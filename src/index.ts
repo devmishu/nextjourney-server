@@ -280,6 +280,45 @@ app.get("/api/trips/:id", async (req: Request, res: Response) => {
   }
 });  
 
+// get user trips
+app.get("/api/trips/user/:userId",  async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+
+    if (typeof userId !== "string") {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid user id",
+      });
+    }
+
+    const query = {
+      userId,
+    };
+
+    const userTrips = await trips.find(query).toArray();
+
+    return res.status(200).send({
+      success: true,
+      message: "User trips fetched successfully",
+      data: userTrips,
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      return res.status(500).send({
+        success: false,
+        message: "Failed to fetch user trips",
+        error: error.message,
+      });
+    }
+
+    return res.status(500).send({
+      success: false,
+      message: "Unknown error occurred",
+    });
+  }
+});
+
 // Routes
 app.get("/", (req: Request, res: Response) => {
   return res.status(200).send({
