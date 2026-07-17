@@ -281,7 +281,7 @@ app.get("/api/trips/:id", async (req: Request, res: Response) => {
 });  
 
 // get user trips
-app.get("/api/trips/user/:userId",  async (req: Request, res: Response) => {
+app.get("/api/trips/user/:userId",verifyToken,  async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
 
@@ -308,6 +308,59 @@ app.get("/api/trips/user/:userId",  async (req: Request, res: Response) => {
       return res.status(500).send({
         success: false,
         message: "Failed to fetch user trips",
+        error: error.message,
+      });
+    }
+
+    return res.status(500).send({
+      success: false,
+      message: "Unknown error occurred",
+    });
+  }
+});
+
+// delete trip by id
+app.delete("/api/trips/:id", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    if (typeof id !== "string") {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid trip id",
+      });
+    }
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid ObjectId",
+      });
+    }
+
+    const query = {
+      _id: new ObjectId(id),
+    };
+
+    const result = await trips.deleteOne(query);
+
+    if (result.deletedCount === 0) {
+      return res.status(404).send({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    return res.status(200).send({
+      success: true,
+      message: "Trip deleted successfully",
+      data: result,
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      return res.status(500).send({
+        success: false,
+        message: "Failed to delete trip",
         error: error.message,
       });
     }
