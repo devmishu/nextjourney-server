@@ -9,7 +9,7 @@ import dns from "node:dns/promises";
 import express, { Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import { MongoClient, ServerApiVersion } from "mongodb";
+import { MongoClient, ObjectId, ServerApiVersion } from "mongodb";
 
 // DNS
 dns.setServers(["1.1.1.1", "8.8.8.8"]);
@@ -227,6 +227,59 @@ app.get("/api/trips/featured", async (req: Request, res: Response) => {
   }
 });
 
+// get trip by id
+app.get("/api/trips/:id", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    if (typeof id !== "string") {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid trip id",
+      });
+    }
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid ObjectId",
+      });
+    }
+
+    const query = {
+      _id: new ObjectId(id),
+    };
+
+    const trip = await trips.findOne(query);
+
+    if (!trip) {
+      return res.status(404).send({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    return res.status(200).send({
+      success: true,
+      message: "Trip fetched successfully",
+      data: trip,
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      return res.status(500).send({
+        success: false,
+        message: "Failed to fetch trip",
+        error: error.message,
+      });
+    }
+
+    return res.status(500).send({
+      success: false,
+      message: "Unknown error occurred",
+    });
+  }
+});  
+
 // Routes
 app.get("/", (req: Request, res: Response) => {
   return res.status(200).send({
@@ -240,4 +293,4 @@ app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
 
-export default app;
+export default app; 
