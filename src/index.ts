@@ -10,6 +10,9 @@ import express, { Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import { MongoClient, ObjectId, ServerApiVersion } from "mongodb";
+import OpenAI from "openai";
+import csv from "csvtojson";
+import multer from "multer";
 
 // DNS
 dns.setServers(["1.1.1.1", "8.8.8.8"]);
@@ -35,6 +38,13 @@ const client = new MongoClient(uri, {
   },
 });
 
+const groq = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY, 
+  baseURL: "https://api.groq.com/openai/v1", 
+});
+
+const upload = multer({ storage: multer.memoryStorage() }); 
+
 // MongoDB Connection
 client
   .connect()
@@ -42,12 +52,14 @@ client
   .catch((err) => console.error("MongoDB connection error:", err));
 
 interface TripData {
+  userId: string;
   title: string;
   shortDescription: string;
   fullDescription: string;
   price: number;
   date: string;
-  priority: string;
+  duration: string;
+  travelStyle: string;
   imageUrl: string;
   category: string;
   location: string;
@@ -57,6 +69,8 @@ const db = client.db("nextJourney");
 const trips = db.collection("trips");
 const sessions = db.collection("session");
 const users = db.collection("user");
+
+
 
 interface CustomRequest extends Request {
   user?: any;
@@ -108,6 +122,7 @@ const verifyToken = async (
   next();
 };
 
+
 // post one events
 app.post("/api/trips",verifyToken, async (req: Request, res: Response) => {
   try {
@@ -129,43 +144,51 @@ app.post("/api/trips",verifyToken, async (req: Request, res: Response) => {
   }
 });
 
+
+
 // get all trips
 app.get("/api/trips", async (req: Request, res: Response) => {
   try {
-    const { search, category, location, sortBy, page, itemsPerPage } = req.query;
+    
+    const { search, category, location, travelStyle, sortBy, page, itemsPerPage } = req.query;
 
     let query: Record<string, any> = {};
 
+    
     if (search && typeof search === "string") {
       query.$or = [
         { title: { $regex: search, $options: "i" } },
         { shortDescription: { $regex: search, $options: "i" } },
         { category: { $regex: search, $options: "i" } },
+        { location: { $regex: search, $options: "i" } },
       ];
     }
 
-    if (
-      category &&
-      typeof category === "string" &&
-      category !== "All Categories"
-    ) {
-      query.category = {
-        $regex: `^${category.trim()}$`,
-        $options: "i",
-      };
+    
+    if (category && typeof category === "string" && category !== "All Categories") {
+      const categoryArray = category.split(",").map(c => new RegExp(`^${c.trim()}$`, "i"));
+      query.category = { $in: categoryArray };
     }
 
-    if (
-      location &&
-      typeof location === "string" &&
-      location !== "All Locations"
-    ) {
-      query.location = {
-        $regex: `^${location.trim()}$`,
-        $options: "i",
-      };
+    
+
+if (location && typeof location === "string" && location !== "All Locations") {
+  
+  const mainLocation = location.split(",")[0].trim(); 
+
+  query.location = {
+    $regex: mainLocation,
+    $options: "i",
+  };
+}
+
+    
+    if (travelStyle && typeof travelStyle === "string") {
+      const styleArray = travelStyle.split(",").map(s => new RegExp(`^${s.trim()}$`, "i"));
+      query.travelStyle = { $in: styleArray };
     }
 
+   
     let sortOption: Record<string, any> = { _id: -1 };
 
     if (sortBy === "Newest") {
@@ -178,10 +201,11 @@ app.get("/api/trips", async (req: Request, res: Response) => {
       sortOption = { price: -1 };
     }
 
+    
     const total = await trips.countDocuments(query);
 
     const currentPage = parseInt(page as string) || 1;
-    const limit = parseInt(itemsPerPage as string) || 8;
+    const limit = parseInt(itemsPerPage as string) || 6;
     const skip = (currentPage - 1) * limit;
 
     const result = await trips
@@ -320,7 +344,7 @@ app.get("/api/trips/user/:userId",verifyToken,  async (req: Request, res: Respon
 });
 
 // delete trip by id
-app.delete("/api/trips/:id", async (req: Request, res: Response) => {
+app.delete("/api/trips/:id",verifyToken, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -371,6 +395,109 @@ app.delete("/api/trips/:id", async (req: Request, res: Response) => {
     });
   }
 });
+
+
+
+// ai chat assiant
+app.post("/api/chat", async (req: Request, res: Response) => {
+  try {
+    const { message } = req.body;
+
+    if (!message) return res.status(400).json({ error: "Message is required" });
+
+
+    const websiteContext = `
+  You are an AI assistant for "NextJourney", a premium travel website.
+  
+  Our Scope:
+  - We offer custom travel packages globally, focusing on diverse destinations and unique travel styles.
+  
+  Available Locations:
+  Bali (Indonesia), Paris (France), Machu Picchu (Peru), Santorini (Greece), 
+  Kyoto (Japan), Safari (Kenya), New York (USA), Sydney (Australia), 
+  Cairo (Egypt), and Patagonia (Argentina).
+  
+  Travel Categories:
+  Beach, Mountain, City, Forest, Desert, Island, Historical, Wildlife, Cruise, and Road Trip.
+
+  Guidelines:
+  - Prices start from $100.
+  - We offer 24/7 customer support.
+  - Contact us at support@nextjourney.com.
+  - If a user asks for recommendations, try to match their request with our available locations and categories.
+  - If the user asks something not related to travel, politely redirect them back to our travel services.
+`;
+
+ 
+    const completion = await groq.chat.completions.create({
+      messages: [
+        { role: "system", content: websiteContext },
+        { role: "user", content: message }
+      ],
+      model: "llama-3.3-70b-versatile",
+    });
+
+    const reply = completion.choices[0].message.content;
+    res.status(200).json({ reply });
+  } catch (error: any) {
+    console.error("Groq API Error:", error);
+    res.status(500).json({ error: "Failed to process chat" });
+  }
+});
+
+
+//analyze-budget
+app.post("/api/analyze-budget", upload.single("file"), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    
+    const fileContent = req.file.buffer.toString("utf8");
+    const jsonData = await csv().fromString(fileContent);
+
+   
+    const prompt = `
+      Analyze this travel budget data: ${JSON.stringify(jsonData)}.
+      1. Provide a concise insight about the spending habits (max 3 sentences).
+      2. Return a JSON object with 'chartData' format: [{name: 'Category', value: number}].
+      Return ONLY in this JSON format: { "insight": "string", "chartData": [...] }
+    `;
+
+    const completion = await groq.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      model: "llama-3.3-70b-versatile",
+      response_format: { type: "json_object" },
+    });
+
+  
+    const result = JSON.parse(completion.choices[0].message.content || "{}");
+    
+    res.status(200).json(result);
+  } catch (error: any) {
+    console.error("Budget Analysis Error:", error);
+    res.status(500).json({ error: "Failed to analyze budget" });
+  }
+}); 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // Routes
 app.get("/", (req: Request, res: Response) => {
